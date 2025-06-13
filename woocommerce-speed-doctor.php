@@ -11,6 +11,16 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Definisci costanti all'inizio del file
+if (!defined('WSD_VERSION')) {
+    define('WSD_VERSION', '1.2.0');
+    define('WSD_FILE', __FILE__);
+    define('WSD_PATH', dirname(WSD_FILE));
+    define('WSD_URL', plugins_url('', WSD_FILE));
+    define('WSD_BASENAME', plugin_basename(WSD_FILE));
+    define('WSD_START_TIME', microtime(true)); // Per tracking performance globale
+}
+
 final class WooCommerce_Speed_Doctor {
     
     private static $instance = null;
@@ -23,7 +33,6 @@ final class WooCommerce_Speed_Doctor {
         $this->query_count_start = get_num_queries();
         $this->memory_start = memory_get_usage();
         
-        $this->define_constants();
         $this->includes();
         $this->setup_hooks();
     }
@@ -35,24 +44,27 @@ final class WooCommerce_Speed_Doctor {
         return self::$instance;
     }
     
-    private function define_constants() {
-        define('WSD_VERSION', '1.2.0');
-        define('WSD_FILE', __FILE__);
-        define('WSD_PATH', dirname(WSD_FILE));
-        define('WSD_URL', plugins_url('', WSD_FILE));
-        define('WSD_BASENAME', plugin_basename(WSD_FILE));
-    }
-    
     private function includes() {
-        require_once WSD_PATH . '/includes/class-wsd-diagnostics.php';
-        require_once WSD_PATH . '/includes/class-wsd-logger.php';
-        require_once WSD_PATH . '/includes/class-wsd-auto-repair.php';
-        require_once WSD_PATH . '/includes/class-wsd-dashboard-widget.php';
-        require_once WSD_PATH . '/includes/class-wsd-email-notifications.php';
-        require_once WSD_PATH . '/includes/class-wsd-auto-scheduler.php';
-        require_once WSD_PATH . '/includes/class-wsd-settings-manager.php';
-        require_once WSD_PATH . '/includes/class-wsd-developer-api.php';
-        require_once WSD_PATH . '/includes/class-wsd-deployment-config.php';
+        $includes = array(
+            '/includes/class-wsd-diagnostics.php',
+            '/includes/class-wsd-logger.php',
+            '/includes/class-wsd-auto-repair.php',
+            '/includes/class-wsd-dashboard-widget.php',
+            '/includes/class-wsd-email-notifications.php',
+            '/includes/class-wsd-auto-scheduler.php',
+            '/includes/class-wsd-settings-manager.php',
+            '/includes/class-wsd-developer-api.php',
+            '/includes/class-wsd-deployment-config.php'
+        );
+        
+        foreach ($includes as $file) {
+            $file_path = WSD_PATH . $file;
+            if (file_exists($file_path)) {
+                require_once $file_path;
+            } else {
+                error_log('[WSD] File non trovato: ' . $file_path);
+            }
+        }
     }
     
     private function setup_hooks() {
@@ -61,15 +73,29 @@ final class WooCommerce_Speed_Doctor {
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
         add_action('shutdown', array($this, 'measure_and_log_performance'));
         
-        // Inizializza componenti
-        WSD_Logger::init();
-        WSD_Dashboard_Widget::init();
-        WSD_Email_Notifications::init();
-        WSD_Auto_Scheduler::init();
-        WSD_Settings_Manager::init();
-        WSD_Developer_API::init();
+        // Inizializza componenti solo se le classi esistono
+        if (class_exists('WSD_Logger')) {
+            WSD_Logger::init();
+        }
+        if (class_exists('WSD_Dashboard_Widget')) {
+            WSD_Dashboard_Widget::init();
+        }
+        if (class_exists('WSD_Email_Notifications')) {
+            WSD_Email_Notifications::init();
+        }
+        if (class_exists('WSD_Auto_Scheduler')) {
+            WSD_Auto_Scheduler::init();
+        }
+        if (class_exists('WSD_Settings_Manager')) {
+            WSD_Settings_Manager::init();
+        }
+        if (class_exists('WSD_Developer_API')) {
+            WSD_Developer_API::init();
+        }
         
-        add_action('admin_init', array('WSD_Diagnostics', 'check_dependencies'));
+        if (class_exists('WSD_Diagnostics')) {
+            add_action('admin_init', array('WSD_Diagnostics', 'check_dependencies'));
+        }
         
         // Hook AJAX per statistiche e test
         add_action('wp_ajax_wsd_get_current_stats', array($this, 'ajax_get_current_stats'));
@@ -77,17 +103,23 @@ final class WooCommerce_Speed_Doctor {
         add_action('wp_ajax_wsd_clear_performance_logs', array($this, 'ajax_clear_performance_logs'));
         
         // Hook AJAX per auto-riparazione
-        add_action('wp_ajax_wsd_repair_action_scheduler', array('WSD_Auto_Repair', 'repair_action_scheduler'));
-        add_action('wp_ajax_wsd_optimize_wp_cron', array('WSD_Auto_Repair', 'optimize_wp_cron'));
-        add_action('wp_ajax_wsd_database_cleanup', array('WSD_Auto_Repair', 'database_cleanup'));
-        add_action('wp_ajax_wsd_optimize_plugins', array('WSD_Auto_Repair', 'optimize_plugins'));
+        if (class_exists('WSD_Auto_Repair')) {
+            add_action('wp_ajax_wsd_repair_action_scheduler', array('WSD_Auto_Repair', 'repair_action_scheduler'));
+            add_action('wp_ajax_wsd_optimize_wp_cron', array('WSD_Auto_Repair', 'optimize_wp_cron'));
+            add_action('wp_ajax_wsd_database_cleanup', array('WSD_Auto_Repair', 'database_cleanup'));
+            add_action('wp_ajax_wsd_optimize_plugins', array('WSD_Auto_Repair', 'optimize_plugins'));
+        }
         
         // Hook AJAX per notifiche email
-        add_action('wp_ajax_wsd_test_email_notification', array('WSD_Email_Notifications', 'test_email_notification'));
+        if (class_exists('WSD_Email_Notifications')) {
+            add_action('wp_ajax_wsd_test_email_notification', array('WSD_Email_Notifications', 'test_email_notification'));
+        }
         
         // Hook AJAX per scheduler
-        add_action('wp_ajax_wsd_toggle_auto_scheduler', array('WSD_Auto_Scheduler', 'ajax_toggle_scheduler'));
-        add_action('wp_ajax_wsd_run_manual_maintenance', array('WSD_Auto_Scheduler', 'ajax_run_manual_maintenance'));
+        if (class_exists('WSD_Auto_Scheduler')) {
+            add_action('wp_ajax_wsd_toggle_auto_scheduler', array('WSD_Auto_Scheduler', 'ajax_toggle_scheduler'));
+            add_action('wp_ajax_wsd_run_manual_maintenance', array('WSD_Auto_Scheduler', 'ajax_run_manual_maintenance'));
+        }
     }
     
     public function load_textdomain() {
@@ -126,32 +158,38 @@ final class WooCommerce_Speed_Doctor {
             array($this, 'render_admin_page')
         );
         
-        add_submenu_page(
-            'wsd-speed-doctor-main',
-            __('Email Settings', 'wc-speed-doctor'),
-            __('📧 Email & Notifiche', 'wc-speed-doctor'),
-            'manage_options',
-            'wsd-email-settings',
-            array('WSD_Email_Notifications', 'render_email_settings')
-        );
+        if (class_exists('WSD_Email_Notifications')) {
+            add_submenu_page(
+                'wsd-speed-doctor-main',
+                __('Email Settings', 'wc-speed-doctor'),
+                __('📧 Email & Notifiche', 'wc-speed-doctor'),
+                'manage_options',
+                'wsd-email-settings',
+                array('WSD_Email_Notifications', 'render_email_settings')
+            );
+        }
         
-        add_submenu_page(
-            'wsd-speed-doctor-main',
-            __('Scheduler', 'wc-speed-doctor'),
-            __('⏰ Scheduler', 'wc-speed-doctor'),
-            'manage_options',
-            'wsd-scheduler',
-            array('WSD_Auto_Scheduler', 'render_scheduler_dashboard')
-        );
+        if (class_exists('WSD_Auto_Scheduler')) {
+            add_submenu_page(
+                'wsd-speed-doctor-main',
+                __('Scheduler', 'wc-speed-doctor'),
+                __('⏰ Scheduler', 'wc-speed-doctor'),
+                'manage_options',
+                'wsd-scheduler',
+                array('WSD_Auto_Scheduler', 'render_scheduler_dashboard')
+            );
+        }
         
-        add_submenu_page(
-            'wsd-speed-doctor-main',
-            __('Impostazioni', 'wc-speed-doctor'),
-            __('⚙️ Impostazioni', 'wc-speed-doctor'),
-            'manage_options',
-            'wsd-settings',
-            array('WSD_Settings_Manager', 'render_settings_page')
-        );
+        if (class_exists('WSD_Settings_Manager')) {
+            add_submenu_page(
+                'wsd-speed-doctor-main',
+                __('Impostazioni', 'wc-speed-doctor'),
+                __('⚙️ Impostazioni', 'wc-speed-doctor'),
+                'manage_options',
+                'wsd-settings',
+                array('WSD_Settings_Manager', 'render_settings_page')
+            );
+        }
     }
     
     public function enqueue_admin_assets($hook) {
@@ -198,9 +236,16 @@ final class WooCommerce_Speed_Doctor {
         
         $this->show_performance_alerts();
         $this->show_version_info();
-        WSD_Auto_Repair::display_repair_dashboard();
-        WSD_Diagnostics::display_diagnostics();
-        WSD_Logger::display_performance_logs();
+        
+        if (class_exists('WSD_Auto_Repair')) {
+            WSD_Auto_Repair::display_repair_dashboard();
+        }
+        if (class_exists('WSD_Diagnostics')) {
+            WSD_Diagnostics::display_diagnostics();
+        }
+        if (class_exists('WSD_Logger')) {
+            WSD_Logger::display_performance_logs();
+        }
         
         echo '</div>';
     }
@@ -212,8 +257,15 @@ final class WooCommerce_Speed_Doctor {
             wp_die(__('Non hai i permessi necessari.', 'wc-speed-doctor'));
         }
         
-        $recent_issues = WSD_Logger::get_recent_issues();
-        $health = WSD_Auto_Repair::get_system_health();
+        $recent_issues = array();
+        $health = array();
+        
+        if (class_exists('WSD_Logger')) {
+            $recent_issues = WSD_Logger::get_recent_issues();
+        }
+        if (class_exists('WSD_Auto_Repair')) {
+            $health = WSD_Auto_Repair::get_system_health();
+        }
         
         $stats = array(
             'memory_usage' => $this->format_bytes(memory_get_usage()),
@@ -345,6 +397,10 @@ final class WooCommerce_Speed_Doctor {
     }
     
     private function calculate_comprehensive_score($health) {
+        if (empty($health)) {
+            return 75; // Score di default se non ci sono dati
+        }
+        
         $score = 100;
         
         // Valuta ogni componente del sistema
@@ -380,7 +436,11 @@ final class WooCommerce_Speed_Doctor {
             $score += 5;
         }
         
-        $recent_issues = WSD_Logger::get_recent_issues();
+        $recent_issues = array();
+        if (class_exists('WSD_Logger')) {
+            $recent_issues = WSD_Logger::get_recent_issues();
+        }
+        
         if (!empty($recent_issues)) {
             $score -= min(count($recent_issues) * 3, 30);
         }
@@ -394,10 +454,12 @@ final class WooCommerce_Speed_Doctor {
         $memory_used = memory_get_usage() - $this->memory_start;
         $queries_used = get_num_queries() - $this->query_count_start;
         
-        WSD_Diagnostics::set_page_load_time($load_time / 1000);
+        if (class_exists('WSD_Diagnostics')) {
+            WSD_Diagnostics::set_page_load_time($load_time / 1000);
+        }
         
         // Log solo performance problematiche per evitare spam
-        if ($load_time > 3000 || $queries_used > 100 || $memory_used > 100 * 1024 * 1024) {
+        if (($load_time > 3000 || $queries_used > 100 || $memory_used > 100 * 1024 * 1024) && class_exists('WSD_Logger')) {
             WSD_Logger::log_performance_issue(array(
                 'load_time' => $load_time,
                 'memory_used' => $this->format_bytes($memory_used),
@@ -420,6 +482,10 @@ final class WooCommerce_Speed_Doctor {
     }
     
     private function show_performance_alerts() {
+        if (!class_exists('WSD_Logger')) {
+            return;
+        }
+        
         $recent_issues = WSD_Logger::get_recent_issues();
         $critical_issues = array_filter($recent_issues, function($issue) {
             return isset($issue['severity']) && $issue['severity'] === 'critical';
@@ -458,36 +524,63 @@ final class WooCommerce_Speed_Doctor {
     }
 }
 
+// Funzione per inizializzare il plugin
 function run_woocommerce_speed_doctor() {
     WooCommerce_Speed_Doctor::get_instance();
 }
-add_action('plugins_loaded', 'run_woocommerce_speed_doctor');
 
+// Hook di attivazione con controllo errori
 register_activation_hook(__FILE__, function() {
-    // Crea tabelle/opzioni necessarie se non esistono
-    $default_options = array(
-        'wsd_performance_log' => array(),
-        'wsd_slow_queries' => array(),
-        'wsd_settings' => array(
-            'monitoring_enabled' => true,
-            'auto_optimization' => false,
-            'log_retention_days' => 7
-        )
-    );
-    
-    foreach ($default_options as $option_name => $default_value) {
-        if (get_option($option_name) === false) {
-            add_option($option_name, $default_value);
+    try {
+        // Crea tabelle/opzioni necessarie se non esistono
+        $default_options = array(
+            'wsd_performance_log' => array(),
+            'wsd_slow_queries' => array(),
+            'wsd_settings' => array(
+                'monitoring_enabled' => true,
+                'auto_optimization' => false,
+                'log_retention_days' => 7
+            )
+        );
+        
+        foreach ($default_options as $option_name => $default_value) {
+            if (get_option($option_name) === false) {
+                add_option($option_name, $default_value);
+            }
         }
+        
+        // Log con costante verificata
+        $version = defined('WSD_VERSION') ? WSD_VERSION : '1.2.0';
+        error_log('[WSD] Plugin attivato con successo il ' . date('Y-m-d H:i:s') . ' - v' . $version);
+        
+    } catch (Exception $e) {
+        error_log('[WSD] Errore durante attivazione: ' . $e->getMessage());
+        wp_die('Errore durante l\'attivazione del plugin WSD: ' . $e->getMessage());
     }
-    
-    error_log('[WSD] Plugin attivato con successo il ' . date('Y-m-d H:i:s') . ' - v' . WSD_VERSION);
 });
 
+// Hook di disattivazione
 register_deactivation_hook(__FILE__, function() {
-    // Pulisci cache e transient temporanei
-    delete_transient('wsd_test_transient');
-    wp_cache_flush();
-    
-    error_log('[WSD] Plugin disattivato il ' . date('Y-m-d H:i:s'));
+    try {
+        // Pulisci cache e transient temporanei
+        delete_transient('wsd_test_transient');
+        wp_cache_flush();
+        
+        error_log('[WSD] Plugin disattivato il ' . date('Y-m-d H:i:s'));
+        
+    } catch (Exception $e) {
+        error_log('[WSD] Errore durante disattivazione: ' . $e->getMessage());
+    }
+});
+
+// Inizializza il plugin su plugins_loaded
+add_action('plugins_loaded', 'run_woocommerce_speed_doctor');
+
+// Verifica che il plugin sia configurato correttamente
+add_action('admin_notices', function() {
+    if (!defined('WSD_VERSION')) {
+        echo '<div class="notice notice-error"><p>';
+        echo '<strong>WSD Error:</strong> Il plugin non è stato inizializzato correttamente. Prova a disattivar e riattivare il plugin.';
+        echo '</p></div>';
+    }
 });
